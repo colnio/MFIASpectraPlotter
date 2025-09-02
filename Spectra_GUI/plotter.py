@@ -4,17 +4,12 @@ import pandas as pd
 import numpy as np
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QFileDialog, QComboBox, 
-                            QListWidget, QLabel, QCheckBox, QGroupBox, QListWidgetItem,
-                            QSlider, QSpinBox)
+                            QListWidget, QLabel, QCheckBox, QGroupBox, QListWidgetItem)
 from PyQt5.QtCore import Qt
 import pyqtgraph as pg
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_hex
 from file_reader import read_data, get_sample_names, get_field_names, extract_sample_field
-
-
-pg.setConfigOption('background', 'w')
-pg.setConfigOption('foreground', 'k')
 
 class SpectralPlotter(QMainWindow):
     def __init__(self):
@@ -29,9 +24,6 @@ class SpectralPlotter(QMainWindow):
         self.field_names = []
         self.active_samples = set()
         self.color_palette = []
-        self.line_thickness = 2  # Default line thickness
-        self.legend_font_size = 10  # Default legend font size
-        self.legend = None  # Store legend object
         
         # Create main widget and layout
         main_widget = QWidget()
@@ -92,35 +84,6 @@ class SpectralPlotter(QMainWindow):
         self.save_btn = QPushButton("Save Visible Data")
         self.save_btn.clicked.connect(self.save_data)
         control_layout.addWidget(self.save_btn)
-        
-        # Add plot appearance controls
-        appearance_group = QGroupBox("Plot Appearance")
-        appearance_layout = QVBoxLayout()
-        
-        # Line thickness control
-        thickness_layout = QHBoxLayout()
-        thickness_layout.addWidget(QLabel("Line Thickness:"))
-        self.thickness_slider = QSlider(Qt.Horizontal)
-        self.thickness_slider.setMinimum(1)
-        self.thickness_slider.setMaximum(10)
-        self.thickness_slider.setValue(self.line_thickness)
-        self.thickness_slider.valueChanged.connect(self.update_line_thickness)
-        thickness_layout.addWidget(self.thickness_slider)
-        appearance_layout.addLayout(thickness_layout)
-        
-        # Legend font size control
-        font_layout = QHBoxLayout()
-        font_layout.addWidget(QLabel("Legend Font Size:"))
-        self.font_size_spin = QSpinBox()
-        self.font_size_spin.setMinimum(8)
-        self.font_size_spin.setMaximum(20)
-        self.font_size_spin.setValue(self.legend_font_size)
-        self.font_size_spin.valueChanged.connect(self.update_legend_font_size)
-        font_layout.addWidget(self.font_size_spin)
-        appearance_layout.addLayout(font_layout)
-        
-        appearance_group.setLayout(appearance_layout)
-        control_layout.addWidget(appearance_group)
         
         # Add control panel to main layout
         layout.addWidget(control_panel, stretch=1)
@@ -201,12 +164,9 @@ class SpectralPlotter(QMainWindow):
         x_field = self.x_axis_combo.currentText()
         y_field = self.y_axis_combo.currentText()
         
-        # Add legend with custom font size
-        if self.legend is not None:
-            self.plot_widget.removeItem(self.legend)
-        self.legend = self.plot_widget.addLegend(offset=(10, 10))
-        self.legend.setLabelTextSize(f'{self.legend_font_size}pt')
-       
+        # Add legend
+        self.plot_widget.addLegend()
+        
         for i in range(self.sample_list.count()):
             item = self.sample_list.item(i)
             if item.checkState() == Qt.Checked:
@@ -216,7 +176,7 @@ class SpectralPlotter(QMainWindow):
                 
                 # Use color from the palette
                 color = self.color_palette[i]
-                pen = pg.mkPen(color=color, width=self.line_thickness)
+                pen = pg.mkPen(color=color, width=2)
                 
                 for x, y in zip(x_data, y_data):
                     self.plot_widget.plot(x, y, name=sample_name, pen=pen)
@@ -264,14 +224,6 @@ class SpectralPlotter(QMainWindow):
             item = self.sample_list.item(i)
             item.setCheckState(Qt.Unchecked)
             self.active_samples.discard(item.text())
-        self.update_plot()
-
-    def update_line_thickness(self):
-        self.line_thickness = self.thickness_slider.value()
-        self.update_plot()
-
-    def update_legend_font_size(self):
-        self.legend_font_size = self.font_size_spin.value()
         self.update_plot()
 
 if __name__ == '__main__':
