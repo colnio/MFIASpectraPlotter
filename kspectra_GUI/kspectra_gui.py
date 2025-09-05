@@ -378,8 +378,9 @@ class KSpectralGUI(QMainWindow):
                 self.plot.plot(f, k, pen=pen, name=name)
                 idx = int(np.argmin(np.abs(np.log10(f) - np.log10(target_f))))
                 if 0 <= idx < len(k): ks_at_target.append(float(k[idx]))
-
-        if ks_at_target:
+        ks_at_target = np.array(ks_at_target)
+        ks_at_target = ks_at_target[~np.isnan(ks_at_target)]
+        if len(ks_at_target) > 0:
             arr = np.array(ks_at_target)
             self.lbl_stats.setText(f"{arr.mean():.2f} ± {arr.std(ddof=1) if len(arr)>1 else 0.0:.2f}")
         else:
