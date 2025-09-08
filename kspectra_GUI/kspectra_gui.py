@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QDoubleSpinBox, QFormLayout, QMessageBox
 )
 from PyQt5.QtCore import Qt
-
+from PyQt5.QtGui import QFont
 import pyqtgraph as pg
 from matplotlib import pyplot as plt
 from matplotlib.colors import to_hex
@@ -111,6 +111,52 @@ def epsilon_r_from_c(c: np.ndarray, thickness_m: float, area_m2: float) -> np.nd
     return c * thickness_m / (EPS0 * area_m2)
 
 
+
+# Formatter 
+
+class Log10PowerAxis(pg.AxisItem):
+    """Show labels only at decades as 10^n; hide others; no ×1e… suffix."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        try:
+            self.enableAutoSIPrefix(False)   # new API
+        except AttributeError:
+            self.autoSIPrefix = False        # old API fallback
+
+    def tickStrings(self, values, scale, spacing):
+        out = []
+        # In log mode, values are already log10(x); in linear mode they are x
+        is_log = getattr(self, "logMode", False)
+
+        for v in values:
+            if not np.isfinite(v):
+                out.append('')
+                continue
+
+            if is_log:
+                # decade ticks are integers in log10 space: …, -1, 0, 1, 2, …
+                if np.isclose(v, round(v), atol=1e-9):
+                    n = int(round(v))
+                    out.append(ten_to_sup(n))   # or use superscripts (see below)
+                else:
+                    out.append('')
+            else:
+                # linear axis: label only exact powers of 10 in linear space
+                if v <= 0:
+                    out.append('')
+                    continue
+                n = int(round(np.log10(v)))
+                if np.isclose(v, 10**n, rtol=0, atol=10**n*1e-12):
+                    out.append(ten_to_sup(n))
+                else:
+                    out.append('')
+        return out
+
+# optional pretty superscripts:
+def ten_to_sup(n: int) -> str:
+    tr = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+    return "10" + str(n).translate(tr)
+
 # ---------------------------
 # GUI application
 # ---------------------------
@@ -176,6 +222,24 @@ class KSpectralGUI(QMainWindow):
 
         control.addWidget(phys_group)
 
+        # Line width control
+        self.spin_linewidth = QDoubleSpinBox()
+        self.spin_linewidth.setDecimals(1)
+        self.spin_linewidth.setRange(0.5, 10.0)
+        self.spin_linewidth.setSingleStep(0.5)
+        self.spin_linewidth.setValue(1.5)  # default
+        self.spin_linewidth.valueChanged.connect(self.update_plot)
+        phys_form.addRow("Line width", self.spin_linewidth)
+
+         # Font size control
+        self.spin_fontsize = QDoubleSpinBox()
+        self.spin_fontsize.setDecimals(0)
+        self.spin_fontsize.setRange(6, 32)
+        self.spin_fontsize.setSingleStep(1)
+        self.spin_fontsize.setValue(12)  # default
+        self.spin_fontsize.valueChanged.connect(self.update_plot)
+        phys_form.addRow("Font size", self.spin_fontsize)
+
         # Areas
         area_group = QGroupBox("Areas (token‑based: 'big'/'mid'/'small')")
         area_form = QFormLayout(area_group)
@@ -226,8 +290,9 @@ class KSpectralGUI(QMainWindow):
         control.addWidget(exp_group)
 
         # Plot
+        bottom = Log10PowerAxis(orientation='bottom')
         plot_v = QVBoxLayout(); main.addLayout(plot_v, 1)
-        self.plot = pg.PlotWidget(); self.plot.setBackground('w'); self.plot.showGrid(x=True, y=True, alpha=0.3)
+        self.plot = pg.PlotWidget(axisItems={'bottom' : bottom}); self.plot.setBackground('w'); self.plot.showGrid(x=True, y=True, alpha=0.3)
         self.plot.setLabel('bottom', 'Frequency (Hz)'); self.plot.setLabel('left', 'k'); self.plot.setLogMode(x=True, y=False)
         plot_v.addWidget(self.plot, 1)
 
@@ -327,7 +392,8 @@ class KSpectralGUI(QMainWindow):
         self.plot.clear(); self.plot.addLegend()
         if not self.dataset:
             self.lbl_stats.setText("—"); return
-
+        for tag, col in self.fixed_colors.items():
+                self.plot.plot([np.nan], [np.nan], pen=pg.mkPen(color=col, width=self.spin_linewidth.value()), name=tag)
         want_0v = self.chk_0v.isChecked(); want_1v = self.chk_1v.isChecked()
         want_big = self.chk_big.isChecked(); want_mid = self.chk_mid.isChecked(); want_small = self.chk_small.isChecked()
 
@@ -364,7 +430,7 @@ class KSpectralGUI(QMainWindow):
                 col = self.fixed_colors[area_tag]
             else:
                 col = color_by_name.get(name, '#000000')
-            pen = pg.mkPen(color=col, width=2)
+            pen = pg.mkPen(color=col, width=self.spin_linewidth.value())
 
             nseg = min(len(freqs_list), len(caps_list))
             for seg in range(nseg):
@@ -375,7 +441,8 @@ class KSpectralGUI(QMainWindow):
                 f = f[:n]; c = c[:n]
                 c_eff = account_for_oxide_series(c, area_m2, dox_m, eps_ox) if use_oxide else c
                 k = epsilon_r_from_c(c_eff, thickness_m, area_m2)
-                self.plot.plot(f, k, pen=pen, name=name)
+                # self.plot.plot(f, k, pen=pen, name=name)
+                self.plot.plot(f, k, pen=pen)
                 idx = int(np.argmin(np.abs(np.log10(f) - np.log10(target_f))))
                 if 0 <= idx < len(k): ks_at_target.append(float(k[idx]))
         ks_at_target = np.array(ks_at_target)
@@ -385,6 +452,26 @@ class KSpectralGUI(QMainWindow):
             self.lbl_stats.setText(f"{arr.mean():.2f} ± {arr.std(ddof=1) if len(arr)>1 else 0.0:.2f}")
         else:
             self.lbl_stats.setText("—")
+        fontsize = int(self.spin_fontsize.value())
+        font = QFont("Arial", fontsize)
+        self.plot.setTitle(name.split('_')[0], size = str(fontsize) + 'pt')
+        axL = self.plot.getAxis('left')
+        axB = self.plot.getAxis('bottom')
+
+        # tick label font (older pyqtgraph: color handled by setTextPen / global foreground)
+        axL.setStyle(tickFont=font)
+        axB.setStyle(tickFont=font)
+
+        # make sure axis lines and tick texts are black on older versions
+        if hasattr(axL, "setTextPen"): axL.setTextPen(pg.mkPen('k'))
+        if hasattr(axB, "setTextPen"): axB.setTextPen(pg.mkPen('k'))
+        if hasattr(axL, "setPen"):     axL.setPen(pg.mkPen('k'))
+        if hasattr(axB, "setPen"):     axB.setPen(pg.mkPen('k'))
+
+        # axis titles
+        axL.label.setFont(font)
+        axB.label.setFont(font)
+
 
     def _generate_palette(self, n):
         cmap = plt.colormaps['tab20'] if n <= 20 else plt.colormaps['viridis']
@@ -465,7 +552,8 @@ class KSpectralGUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    pg.setConfigOptions(antialias=True)
+    pg.setConfigOptions(antialias=True, foreground='k')  # <- make text/ticks black globally
+    # pg.setConfigOptions(antialias=True)
     win = KSpectralGUI(); win.show()
     sys.exit(app.exec_())
 
