@@ -620,7 +620,7 @@ class KSpectralGUI(QMainWindow):
                     self.plot.plot(v, k, pen=pen)
 
                     # Stats at voltage: nearest in linear space (allow ±)
-                    idx = int(np.argmin(np.abs(v - stat_value)))
+                    idx = int(np.argpartition(np.abs(v - stat_value), 1)[1])
                     if 0 <= idx < len(k):
                         ks_at_target.append(float(k[idx]))
 
